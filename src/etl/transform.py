@@ -82,19 +82,19 @@ def build_player_match_stats(event: pd.DataFrame, player_name: str, match_id: in
     return summary
 
 # Func4: Create table with all players metrics and stats
-def build_all_players_stats(event: pd.DataFrame, match_id: int) -> pd.DataFrame:
+def build_all_players_stats(events: pd.DataFrame, match_id: int) -> pd.DataFrame:
     """
     Build a match stats for every player in a given match.
 
     Args:
-        event (pd.DataFrame): A DataFrame containing the events from a match.
+        events (pd.DataFrame): A DataFrame containing the events from a match.
         match_id (int): The ID of a match
     Returns:
         pd.DataFrame: One row per player with all their match statistics.
     """
 
     # Only events that belong to player
-    df = event[event["player.name"].notna()].copy()
+    df = events[events["player.name"].notna()].copy()
 
     # Not all matches have this columns, if they dont have it create them as empty
     for col in ["pass.outcome.name", "duel.outcome.name", "interception.outcome.name", "position.name"]:
@@ -106,6 +106,7 @@ def build_all_players_stats(event: pd.DataFrame, match_id: int) -> pd.DataFrame:
 
     won = ["Won", "Success In Play", "Success Out"]     # Outcomes counted as a win
     rows = []
+    minutes = get_minutes_played(events)
 
     # One group per player
     for (player_id, player_name), g in df.groupby(["player.id", "player.name"]):
@@ -126,6 +127,45 @@ def build_all_players_stats(event: pd.DataFrame, match_id: int) -> pd.DataFrame:
             "total_duels": len(duels),
             "total_successful_interceptions": int(interceptions["interception.outcome.name"].isin(won).sum()),
             "total_recoveries": int((g["type.name"] == "Ball Recovery").sum()),
+            "minutes_played": minutes.get(int(player_id)),
         })
 
     return pd.DataFrame(rows)
+
+# Func5: Get minutes played by each player
+def get_minutes_played(events: pd.DataFrame) -> dict:
+    """
+    Calculate the minutes played by every player in one match.
+
+    Args:
+        events (pd.DataFrame): A DataFrame conaining the events from a match
+    Returns:
+        dict: {player_id: minutes_played}
+    """
+
+    # The match ends at the las minute registered (includes extra time)
+    match_end = int(events["minute"].max())
+
+    start = {}  # player_id -> minute entered
+    end = {}    # player_id -> minute left
+
+    # Starters play from minute 0
+    starting_xi = events[events["type.name"] == "Starting XI"]
+    for lineup in starting_xi["tactics.lineup"]:
+        for p in lineup:
+            player_id = int(p["player"]["id"])
+            start[player_id] = 0
+            end[player_id] = match_end
+
+    # Starter players play since minute 0
+    subs = events[events["type.name"] == "Substitution"]
+    for _, row in subs.iterrows():
+        minute = int(row["minute"])
+        player_off = int(row["player.id"])
+        player_on = int(row["substitution.replacement.id"])
+
+        end[player_off] = minute
+        start[player_on] = minute
+        end[player_on] = match_end
+
+    return {pid: end[pid] - start[pid] for pid in start}
