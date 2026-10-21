@@ -81,6 +81,8 @@ def build_player_match_stats(event: pd.DataFrame, player_name: str, match_id: in
 
     return summary
 
+# Constant for Long Passes
+LONG_PASS_YARDS = 32
 # Func4: Create table with all players metrics and stats
 def build_all_players_stats(events: pd.DataFrame, match_id: int) -> pd.DataFrame:
     """
@@ -97,7 +99,9 @@ def build_all_players_stats(events: pd.DataFrame, match_id: int) -> pd.DataFrame
     df = events[events["player.name"].notna()].copy()
 
     # Not all matches have this columns, if they dont have it create them as empty
-    for col in ["pass.outcome.name", "duel.outcome.name", "interception.outcome.name", "position.name"]:
+    for col in ["pass.outcome.name", "duel.outcome.name", "interception.outcome.name", "position.name",
+                "pass.length", "pass.goal_assist", "duel.type.name", "shot.outcome.name", 
+                "shot.statsbomb_xg", "dribble.outcome.name"]:
         if col not in df.columns:
             df[col] = None
 
@@ -113,6 +117,9 @@ def build_all_players_stats(events: pd.DataFrame, match_id: int) -> pd.DataFrame
         passes = g[g["type.name"] == "Pass"]
         duels = g[g["type.name"] == "Duel"]
         interceptions = g[g["type.name"] == "Interception"]
+        tackles = duels[duels["duel.type.name"] == "Tackle"]
+        shots = g[(g["type.name"] == "Shot") & (g["period"] != 5)]      # period 5 = penalty shootout
+        dribbles = g[g["type.name"] == "Dribble"]
         position = g["position.name"].mode()    # Most frequent positin in this match
 
         rows.append({
@@ -127,6 +134,14 @@ def build_all_players_stats(events: pd.DataFrame, match_id: int) -> pd.DataFrame
             "total_duels": len(duels),
             "total_successful_interceptions": int(interceptions["interception.outcome.name"].isin(won).sum()),
             "total_recoveries": int((g["type.name"] == "Ball Recovery").sum()),
+            "total_long_passes": int((pd.to_numeric(passes["pass.length"], errors="coerce") >= LONG_PASS_YARDS).sum()),     # HUH?
+            "total_tackles_won": int(tackles["duel.outcome.name"].isin(won).sum()),
+            "total_shots": len(shots),
+            "total_goals": int((shots["shot.outcome.name"] == "Goal").sum()),
+            "total_assists": int((passes["pass.goal_assist"] == True).sum()),
+            "total_xg": round(float(pd.to_numeric(shots["shot.statsbomb_xg"], errors="coerce").sum()), 3),  # HUH?
+            "total_dribbles": len(dribbles),
+            "total_completed_dribbles": int((dribbles["dribble.outcome.name"] == "Complete").sum()),
             "minutes_played": minutes.get(int(player_id)),
         })
 
