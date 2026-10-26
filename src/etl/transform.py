@@ -184,3 +184,38 @@ def get_minutes_played(events: pd.DataFrame) -> dict:
         end[player_on] = match_end
 
     return {pid: end[pid] - start[pid] for pid in start}
+
+def build_player_events(events: pd.DataFrame, player_name: str, match_id: int) ->pd.DataFrame:
+    """
+    Events of one player that have a pitch location, in the format of the Events table.
+
+    Args:
+        events (pd.DataFrame): The evants of one match.
+        player_name (str): The player whose events we want.
+        match_id (int): The ID of the match.
+    
+    Returns:
+        pd.DataFrame: One row per event, with x(0-120) and y(0-80).
+    """
+
+    # Only this player's events that have a [x, y] location
+    has_location = events["location"].apply(lambda loc: isinstance(loc, list))
+    df = events[(events["player.name"] == player_name) & has_location].copy()
+
+    # Outcome of the event (pass, duel, shot, ...). In StatsBomb a completed pass has none
+    outcome_cols = [c for c in ["pass.outcome.name", "duel.outcome.name", "shot.outcome.name",
+                                "dribble.outcome.name", "interception.outcome.name"]
+                                if c in df.columns]
+    outcome = df[outcome_cols].bfill(axis=1).iloc[:, 0] if outcome_cols else None
+
+    return pd.DataFrame({
+        "event_id": df["id"],
+        "match_id": match_id,
+        "player_id": df["player.id"].astype(int),
+        "player_name": df["player.name"],
+        "event_type": df["type.name"],
+        "minute": df["minute"],
+        "x": df["location"].apply(lambda loc: loc[0]),
+        "y": df["location"].apply(lambda loc: loc[1]),
+        "outcome": outcome,
+    })
